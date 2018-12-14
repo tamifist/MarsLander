@@ -20,7 +20,7 @@ class Program
 
         Shuttle shuttle = new Shuttle(surface);
         int turnNb = 0;
-        GeneticAlgorithm geneticAlgorithm = new GeneticAlgorithm(30, 100, 0.9, 0.01, 3, 3, 10000, 100, surface, shuttle);
+        GeneticAlgorithm geneticAlgorithm = new GeneticAlgorithm(30, 100, 0.9, 0.06, 3, 3, 10000, 100, surface, shuttle);
 
         // game loop
         while (true)
@@ -86,6 +86,7 @@ public class GeneticAlgorithm
     }
 
     public FlightInstruction ToPlay { get; set; }
+    public Individual Elite { get; set; }
 
     public void Run()
     {
@@ -94,6 +95,7 @@ public class GeneticAlgorithm
 
         Population population = new Population(populationSize, chromosomeLength);
 
+        ReinjectTheBestIndividual(population);
         EvalPopulation(population);
 
         int currentGeneration = 1;
@@ -101,7 +103,7 @@ public class GeneticAlgorithm
         {
             //population.Individuals = population.OrderByFitness();
 
-            population = CrossoverPopulation(population);
+            population = CrossoverPopulation2(population);
             population = MutatePopulation(population);
 
             EvalPopulation(population);
@@ -109,14 +111,27 @@ public class GeneticAlgorithm
             currentGeneration++;
         }
     }
-    
+
+    private void ReinjectTheBestIndividual(Population population)
+    {
+        if (Elite == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < elitismCount; i++)
+        {
+            population.Individuals[i] = new Individual(Elite.Chromosome);
+        }
+    }
+
     private Population MutatePopulation(Population population)
     {
         Population newPopulation = new Population(population.Individuals.Length);
 
         for (int individualIndex = 0; individualIndex < population.Individuals.Length; individualIndex++)
         {
-            Individual individual = population.GetFittest(individualIndex);//population.Individuals[individualIndex];
+            Individual individual = new Individual(population.GetFittest(individualIndex).Chromosome);//population.Individuals[individualIndex];
 
             if (individualIndex >= elitismCount)
             {
@@ -135,39 +150,57 @@ public class GeneticAlgorithm
         return newPopulation;
     }
 
-    //void selectionByTournament()
-    //{
-    //    int ind1, ind2, winner;
-    //    int selectedIndNb = 0;
-    //    for (int indIdx = 0; indIdx < SELECTED_NB; indIdx++)
-    //    {
-    //        ind1 = Utils.RandomInt(0, POPULATION_SIZE);
-    //        ind2 = Utils.RandomInt(0, POPULATION_SIZE);
-    //        if (this.fitness[ind1] > this.fitness[ind2])
-    //        {
-    //            winner = ind1;
-    //        }
-    //        else
-    //        {
-    //            winner = ind2;
-    //        }
-    //        Utils.copyContent(this.currentPopulation, winner, this.nextPopulation, selectedIndNb, this.individualEffectiveSize);
-    //        selectedIndNb++;
-    //    }
-    //    // Elitism ! (override 1st prev selected)
-    //    int bestInd = 0;
-    //    int bestFit = this.fitness[0];
-    //    for (int i = 1; i < POPULATION_SIZE; i++)
-    //    {
-    //        if (this.fitness[i] > bestFit)
-    //        {
-    //            bestFit = this.fitness[i];
-    //            bestInd = i;
-    //        }
-    //    }
+    private Population CrossoverPopulation2(Population population)
+    {
+        Population newPopulation = new Population(population.Individuals.Length);
 
-    //    Utils.copyContent(currentPopulation, bestInd, this.nextPopulation, 0, this.individualEffectiveSize);
-    //}
+        int ind1, ind2, winner;
+        int selectedNb = populationSize / 2;
+
+        for (int indIdx = 0; indIdx < selectedNb; indIdx++)
+        {
+            ind1 = Utils.RandomInt(0, populationSize);
+            ind2 = Utils.RandomInt(0, populationSize);
+            if (population.Individuals[ind1].Fitness > population.Individuals[ind2].Fitness)
+            {
+                winner = ind1;
+            }
+            else
+            {
+                winner = ind2;
+            }
+            newPopulation.Individuals[indIdx] = new Individual(population.Individuals[winner].Chromosome);
+        }
+        // Elitism ! (override 1st prev selected)
+        newPopulation.Individuals[0] = new Individual(population.GetFittest(0).Chromosome);
+
+        int pivot1, pivot2;
+        for (int child = selectedNb; child < populationSize; child++)
+        {
+            ind1 = Utils.RandomInt(0, selectedNb);
+            ind2 = Utils.RandomInt(0, selectedNb);
+            pivot1 = Utils.RandomInt(0, this.chromosomeLength);
+            pivot2 = Utils.RandomInt(0, this.chromosomeLength);
+
+            Individual offspring = new Individual(chromosomeLength);
+
+            for (int gene = 0; gene < this.chromosomeLength; gene++)
+            {
+                if (gene < Math.Min(pivot1, pivot2) || gene > Math.Max(pivot1, pivot2))
+                {
+                    offspring.Chromosome[gene] = new FlightInstruction(population.Individuals[ind1].Chromosome[gene]);
+                }
+                else
+                {
+                    offspring.Chromosome[gene] = new FlightInstruction(population.Individuals[ind2].Chromosome[gene]);
+                }
+            }
+
+            newPopulation.Individuals[child] = offspring;
+        }
+
+        return newPopulation;
+    }
 
     private Population CrossoverPopulation(Population population)
     {
@@ -188,11 +221,11 @@ public class GeneticAlgorithm
                 {
                     if (geneIndex < crossoverPoint1 || geneIndex >= crossoverPoint2)
                     {
-                        offspring.Chromosome[geneIndex] = parent1.Chromosome[geneIndex];
+                        offspring.Chromosome[geneIndex] = new FlightInstruction(parent1.Chromosome[geneIndex]);
                     }
                     else
                     {
-                        offspring.Chromosome[geneIndex] = parent2.Chromosome[geneIndex];
+                        offspring.Chromosome[geneIndex] = new FlightInstruction(parent2.Chromosome[geneIndex]);
                     }
                 }
 
@@ -200,7 +233,7 @@ public class GeneticAlgorithm
             }
             else
             {
-                newPopulation.Individuals[individualIndex] = parent1;
+                newPopulation.Individuals[individualIndex] = new Individual(parent1.Chromosome);
             }
         }
 
@@ -236,8 +269,9 @@ public class GeneticAlgorithm
         {
             population.PopulationFitness += individual.Fitness;
         }
-
-        ToPlay = population.GetFittest(0).Chromosome[0];
+        
+        Elite = population.GetFittest(0);
+        ToPlay = Elite.Chromosome[0];
     }
 
     private double CalcFitness(Individual individual)
@@ -325,7 +359,11 @@ public class Individual
 {
     public Individual(FlightInstruction[] chromosome)
     {
-        Chromosome = chromosome;
+        Chromosome = new FlightInstruction[chromosome.Length];
+        for (int i = 0; i < chromosome.Length; i++)
+        {
+            Chromosome[i] = new FlightInstruction(chromosome[i].TiltAngle, chromosome[i].ThrustPower);
+        }
     }
 
     public FlightInstruction[] Chromosome { get; set; }
@@ -550,6 +588,12 @@ public class FlightInstruction
     {
         TiltAngle = tiltAngle;
         ThrustPower = thrustPower;
+    }
+
+    public FlightInstruction(FlightInstruction flightInstruction)
+    {
+        TiltAngle = flightInstruction.TiltAngle;
+        ThrustPower = flightInstruction.ThrustPower;
     }
 
     public int TiltAngle { get; set; }
